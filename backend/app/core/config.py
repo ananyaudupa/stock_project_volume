@@ -58,6 +58,16 @@ class Settings(BaseSettings):
             return time(int(hh), int(mm))
         return v
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _psycopg_driver(cls, v):
+        # Hosts like Neon/Render hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the driver named.
+        if isinstance(v, str):
+            for prefix in ("postgres://", "postgresql://"):
+                if v.startswith(prefix):
+                    return "postgresql+psycopg://" + v[len(prefix):]
+        return v
+
     @model_validator(mode="after")
     def _check_weights(self):
         if self.volume_score_weight < 0 or self.movement_score_weight < 0:

@@ -1,0 +1,28 @@
+# Render Blueprint: one free web service (website + API). The database is Neon (free Postgres);
+# scans are run by GitHub Actions (.github/workflows/scans.yml), not by this service.
+services:
+  - type: web
+    name: nse-scanner
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: MARKET_DATA_PROVIDER
+        value: yahoo
+      - key: MORNING_SCAN_TIME
+        value: "09:20"
+      - key: AFTERNOON_SCAN_TIME
+        value: "15:00"
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string in the Render dashboard
+      - key: APP_PASSWORD
+        sync: false # the password your dad types
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: ""
