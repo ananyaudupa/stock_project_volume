@@ -4,7 +4,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: scanner
-      POSTGRES_PASSWORD: scanner_dev_only
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: stock_scanner
     ports:
       - "5432:5432"
@@ -19,7 +19,7 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://scanner:scanner_dev_only@db:5432/stock_scanner
+      DATABASE_URL: postgresql+psycopg://scanner:${POSTGRES_PASSWORD}@db:5432/stock_scanner
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
@@ -31,7 +31,7 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://scanner:scanner_dev_only@db:5432/stock_scanner
+      DATABASE_URL: postgresql+psycopg://scanner:${POSTGRES_PASSWORD}@db:5432/stock_scanner
     command: python -m app.scheduler
     depends_on:
       db:
