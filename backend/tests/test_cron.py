@@ -65,3 +65,50 @@ def test_cron_does_nothing_on_holiday(seeded, provider, calendar, settings, monk
     when = datetime(2026, 10, 20, 9, 25, tzinfo=IST)  # Dussehra
     assert cron.main(now=when, factory=seeded, settings=Settings(_env_file=None, morning_scan_time="09:20",
                      database_url=settings.database_url), provider=provider, calendar=calendar) == 0
+
+
+# --- HTTP trigger (cron-job.org) and missed-scan detection ---------------------------------
+
+def test_cron_endpoint_requires_token(client, settings):
+    assert client.post("/api/cron/run").json()["error"]["code"] == "cron_disabled"
+    settings.cron_token = "tok-123"
+    assert client.post("/api/cron/run").status_code == 401
+    assert client.post("/api/cron/run", headers={"X-Cron-Token": "wrong"}).status_code == 401
+
+
+def test_cron_endpoint_nothing_due(client, settings, clock):
+    settings.cron_token = "tok-123"
+    clock.value = datetime(2026, 10, 16, 12, 0, tzinfo=IST)
+    r = client.post("/api/cron/run", headers={"X-Cron-Token": "tok-123"})
+    assert r.status_code == 202 and r.json()["due"] is None and r.json()["started"] is False
+
+
+def test_cron_endpoint_runs_due_scan_in_background(client, settings, clock, seeded, monkeypatch):
+    import app.services.scanner as scanner
+
+    settings.cron_token = "tok-123"
+    when = datetime(2026, 10, 16, 15, 1, tzinfo=IST)
+    clock.value = when
+    monkeypatch.setattr(scanner, "utcnow", lambda: when)
+    monkeypatch.setattr(cron, "BUNDLED_AMFI", [])
+    r = client.post("/api/cron/run", headers={"X-Cron-Token": "tok-123"})
+    assert r.status_code == 202 and r.json() == {"due": "afternoon", "started": True, "ist": when.isoformat()}
+    # TestClient runs background tasks before returning; a second call is a harmless duplicate.
+    client.post("/api/cron/run", headers={"X-Cron-Token": "tok-123"})
+    with seeded() as db:
+        runs = db.scalars(select(ScanRun)).all()
+    assert [(r.session, r.status) for r in runs] == [("afternoon", "completed")]
+
+
+def test_late_trigger_reports_missed_scan(seeded, provider, calendar, settings, monkeypatch, scan):
+    monkeypatch.setattr(cron, "BUNDLED_AMFI", [])
+    s = Settings(_env_file=None, database_url=settings.database_url, morning_scan_time="09:20")
+    late = datetime(2026, 10, 16, 14, 30, tzinfo=IST)  # GitHub ran the 09:20 trigger 5h late
+    assert cron.missed_sessions(late, seeded, s, calendar) == ["morning"]
+    assert cron.main(now=late, factory=seeded, settings=s, provider=provider, calendar=calendar) == 1
+    from app.models import ScanSession
+    scan(session=ScanSession.MORNING)
+    assert cron.main(now=late, factory=seeded, settings=s, provider=provider, calendar=calendar) == 0
+    evening = datetime(2026, 10, 16, 21, 0, tzinfo=IST)
+    assert cron.missed_sessions(evening, seeded, s, calendar) == ["afternoon"]
+    assert cron.missed_sessions(datetime(2026, 10, 20, 21, 0, tzinfo=IST), seeded, s, calendar) == []  # holiday

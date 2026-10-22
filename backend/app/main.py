@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, auth, scans, stocks
+from app.api import admin, auth, cron, scans, stocks
 from app.core.auth import require_login
 from app.core.config import get_settings
 from app.core.errors import install_error_handlers
@@ -28,13 +28,14 @@ def create_app() -> FastAPI:
     app = FastAPI(title="NSE Daily Stock Scanner", version="1.0.0", description=DISCLAIMER)
     app.add_middleware(
         CORSMiddleware, allow_origins=settings.cors_origin_list, allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "X-Admin-Key"], allow_credentials=True,
+        allow_headers=["Content-Type", "X-Admin-Key", "X-Cron-Token"], allow_credentials=True,
     )
     install_error_handlers(app)
     app.include_router(auth.router)
     app.include_router(scans.router, dependencies=[Depends(require_login)])
     app.include_router(stocks.router, dependencies=[Depends(require_login)])
     app.include_router(admin.router)
+    app.include_router(cron.router)
 
     access_log = logging.getLogger("access")
 

@@ -1,4 +1,7 @@
-"""Entry point for an external cron (GitHub Actions): `python -m app.scheduler.cron`.
+"""Scheduled-work entry point, shared by both triggers:
+
+* cron-job.org -> POST /api/cron/run on the website (punctual; primary)
+* GitHub Actions -> `python -m app.scheduler.cron` (backup; often hours late)
 
 The cron fires a few times around each target time (as a backup, because hosted crons can
 start late or skip). Each invocation works out what is due from the current IST time:
@@ -8,7 +11,7 @@ start late or skip). Each invocation works out what is due from the current IST 
   close performance PERFORMANCE_JOB_TIME .. 20:00
 
 Duplicate invocations are harmless: a published scan is never re-run (see services/scanner.py).
-Exit code 1 = a scan failed, so the hosting cron reports/email-alerts the failure.
+Exit code 1 = a scan failed or was missed, so GitHub marks the run red and emails the owner.
 """
 
 import sys
@@ -19,9 +22,12 @@ from sqlalchemy import select
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.trading_calendar import get_calendar
 from app.db.session import get_sessionmaker
 from app.models import ClassificationVersion, ScanSession
+from app.models.enums import PUBLISHED_STATUSES
 from app.scheduler.jobs import performance_job, scheduled_scan_job
+from app.services import queries
 from app.services.classification import parse_amfi_file, save_classification
 
 AMFI_DIR = Path(__file__).resolve().parent.parent / "data" / "amfi"
@@ -68,14 +74,40 @@ def ensure_classification(factory, today: date) -> list[str]:
     return imported
 
 
+def missed_sessions(now: datetime, factory, settings: Settings, calendar=None) -> list[str]:
+    """Sessions whose window has closed today without a published snapshot."""
+    calendar = calendar or get_calendar()
+    local = now.astimezone(settings.tz)
+    today = local.date()
+    if calendar.non_trading_reason(today) or calendar.is_special_session(today):
+        return []
+    window_end = {
+        ScanSession.MORNING: datetime.combine(today, settings.morning_scan_time, settings.tz) + MORNING_WINDOW,
+        ScanSession.AFTERNOON: datetime.combine(today, AFTERNOON_END, settings.tz),
+    }
+    missed = []
+    with factory() as db:
+        for s, end in window_end.items():
+            if local < end:
+                continue
+            run = queries.display_run(db, today, s)
+            if run is None or run.status not in PUBLISHED_STATUSES:
+                missed.append(s.value)
+    return missed
+
+
 def main(now: datetime | None = None, factory=None, settings: Settings | None = None, **job_deps) -> int:
-    configure_logging()
     settings = settings or get_settings()
     factory = factory or get_sessionmaker()
     now = now or datetime.now(timezone.utc)
     job = due_job(now, settings)
     print(f"now {now.astimezone(settings.tz):%Y-%m-%d %H:%M} IST -> {job or 'nothing due'}")
     if job is None:
+        # A late trigger can't run a scan any more, but it must not look like success either.
+        missed = missed_sessions(now, factory, settings, job_deps.get("calendar"))
+        if missed:
+            print(f"MISSED today: {', '.join(missed)} scan(s) never ran (scheduler too late).")
+            return 1
         return 0
 
     imported = ensure_classification(factory, now.astimezone(settings.tz).date())
@@ -96,4 +128,5 @@ def main(now: datetime | None = None, factory=None, settings: Settings | None = 
 
 
 if __name__ == "__main__":
+    configure_logging()
     sys.exit(main())

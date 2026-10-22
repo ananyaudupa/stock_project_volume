@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # Built frontend to serve from the API (single origin). Empty = auto-detect ../frontend/dist.
     frontend_dist: str = ""
 
+    # Shared secret for POST /api/cron/run (sent by cron-job.org in the X-Cron-Token header). Empty = disabled.
+    cron_token: str = Field(default="", repr=False)
+
     admin_api_key: str = Field(default="", repr=False)
     alert_webhook_url: str = Field(default="", repr=False)
     cors_origins: str = "http://localhost:5173"
