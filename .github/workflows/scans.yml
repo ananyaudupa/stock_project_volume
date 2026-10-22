@@ -1,23 +1,20 @@
 name: Scheduled scans
 
-# Times are UTC (IST = UTC+5:30). Each target has backup triggers because GitHub's scheduler can
-# start late or skip a run; a scan that is already published is never run twice.
-#   Morning scan 09:20 IST   -> 03:50 UTC (backups 04:05, 04:20)
-#   Afternoon scan 15:00 IST -> 09:30 UTC (backups 09:40, 09:50)
-#   Close performance 16:00 IST -> 10:30 UTC (backup 11:30)
-# Weekends/NSE holidays are skipped by the app itself. A failed scan fails this job, and
-# GitHub emails the repository owner.
+# PRIMARY trigger: cron-job.org calls GitHub's "workflow_dispatch" API at the exact times
+# (IST 09:20, 09:25, 15:00, 15:20, 15:25, 16:00, 16:20, 16:25). A dispatched run starts within
+# seconds, unlike GitHub's own scheduler, which was observed running hours late.
+#
+# BACKUP trigger: GitHub's scheduler below, once per session (times in UTC; IST = UTC+5:30).
+# If it runs too late to scan, it fails (red) when a scan was missed today, so GitHub emails you.
+#
+# Each run works out what is due from the current IST time; weekends and NSE holidays are
+# skipped by the app, and a scan that is already published is never run twice.
 on:
+  workflow_dispatch:
   schedule:
-    - cron: "50 3 * * 1-5"
-    - cron: "5 4 * * 1-5"
-    - cron: "20 4 * * 1-5"
-    - cron: "30 9 * * 1-5"
-    - cron: "40 9 * * 1-5"
-    - cron: "50 9 * * 1-5"
-    - cron: "30 10 * * 1-5"
-    - cron: "30 11 * * 1-5"
-  workflow_dispatch: # "Run workflow" button for manual runs (does whatever is due right now)
+    - cron: "5 4 * * 1-5"   # 09:35 IST morning backup
+    - cron: "45 9 * * 1-5"  # 15:15 IST afternoon backup
+    - cron: "45 10 * * 1-5" # 16:15 IST close-performance backup
 
 concurrency:
   group: scans

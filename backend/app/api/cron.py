@@ -1,6 +1,8 @@
-"""Trigger for an external scheduler (cron-job.org). GitHub's free scheduler can run hours late,
-so a punctual HTTP cron calls this instead. The work runs in the background so the caller's
-short request timeout doesn't matter; duplicate calls are harmless."""
+"""HTTP trigger that runs due scans inside the web process. Disabled unless CRON_TOKEN is set.
+
+Not used in the free Render deployment: its ~0.1 CPU instance cannot run a 494-stock scan while
+serving the site. Only enable this on a host with real CPU; otherwise trigger the GitHub
+workflow (see .github/workflows/scans.yml)."""
 
 import hmac
 import logging

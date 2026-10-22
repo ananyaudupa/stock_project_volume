@@ -1,6 +1,7 @@
 # Render Blueprint: one free web service (website + API). The database is Neon (free Postgres);
-# Scans are triggered by cron-job.org calling POST /api/cron/run (header X-Cron-Token = CRON_TOKEN);
-# GitHub Actions (.github/workflows/scans.yml) is a late-running backup.
+# Scans run on GitHub Actions (.github/workflows/scans.yml), started on time by cron-job.org via
+# GitHub's workflow_dispatch API. They must NOT run here: the free instance has ~0.1 CPU and a
+# 494-stock scan starved it (website unresponsive, scan failed) on 2026-10-22.
 services:
   - type: web
     name: nse-scanner
@@ -25,7 +26,5 @@ services:
         sync: false # the password your dad types
       - key: ADMIN_API_KEY
         generateValue: true
-      - key: CRON_TOKEN
-        generateValue: true # copy this value into the cron-job.org job's X-Cron-Token header
       - key: CORS_ORIGINS
         value: ""
